@@ -17,10 +17,13 @@
             <div class="collapse navbar-collapse" id="collapsibleNavbar">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="/Products">Products</a>
+                        <a class="nav-link" href="/products">Browse Products</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/addProduct">Add New Product</a>
+                        <a class="nav-link" href="/addProduct">Add products</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="/logout">Logout</a>
@@ -31,16 +34,18 @@
     </nav>
 
     <div class="container">
+        <% if (user) { %>
+            <p>Welcome, <%= user.username %> (<%= user.role %>)</p>
+        <% } %>
         <br>
-        <div class="text-center"><h2>PC Components from BuildPC App Database</h2></div>
-        <br>
-
-        <!-- Search and filter section - keeping your functionality -->
+        
+        <!-- Simple search and filter form -->
         <div class="row mb-3">
             <div class="col-md-8">
-                <h4>Filter Products</h4>
+                <div class="text-center"><h2>PC Components Catalog</h2></div>
             </div>
             <div class="col-md-4">
+                <!-- search and filter products -->
                 <form method="GET" action="/products">
                     <div class="mb-2">
                         <input type="text" class="form-control" name="search" placeholder="Search products..." 
@@ -63,55 +68,78 @@
                 </form>
             </div>
         </div>
-
-        <!-- Product table - supermarket app style structure -->
-        <table class="table table-hover small text-center">
-            <thead>
-                <tr>
-                    <th width="150">Product Name</th>
-                    <th width="100">Product Image</th>
-                    <th width="80">Category</th>
-                    <th width="80">Brand</th>
-                    <th width="60">Price</th>
-                    <th width="60">Stock</th>
-                    <th width="50">Edit</th>
-                    <th width="50">Delete</th>
-                </tr>
-            </thead>
-            <tbody>
-                <% if (!products || products.length === 0) { %>
-                    <tr>
-                        <td colspan="8" class="text-center">No products found. Try different search terms.</td>
-                    </tr>
-                <% } else { %>
-                    <% for(let i=0; i < products.length; i++) { %>
-                        <tr>
-                            <td><a href="/product/<%= products[i].id %>"><%= products[i].name %></a></td>
-                            <td><img src="/images/<%= products[i].image_url %>" width="60"></td>
-                            <td><%= products[i].category %></td>
-                            <td><%= products[i].brand %></td>
-                            <td>$<%= products[i].price.toFixed(2) %></td>
-                            <td>
-                                <% if (products[i].stock_quantity > 0) { %>
-                                    <span class="text-success"><%= products[i].stock_quantity %></span>
-                                <% } else { %>
-                                    <span class="text-danger">Out of Stock</span>
+        
+        <!-- Card layout -->
+        <div class="row">
+            <% if (!products || products.length === 0) { %>
+                <div class="col-12">
+                    <p class="text-center">No products found. Try different search terms.</p>
+                </div>
+            <% } else { %>
+                <% for(let i=0; i < products.length; i++) { %>
+                    <div class="col-lg-4 col-md-6 mb-4">
+                        <div class="card">
+                            <!-- Category badge -->
+                            <div class="card-header">
+                                <% if (products[i].category) { %>
+                                    <span class="badge bg-primary"><%= products[i].category %></span>
                                 <% } %>
-                            </td>
-                            <td>
-                                <a href="/updateProduct/<%= products[i].id %>">Edit</a>
-                            </td>
-                            <td>
-                                <a href="/deleteProduct/<%= products[i].id %>" 
-                                   onclick="return confirm('Are you sure you want to delete this product?')">
-                                    Delete
-                                </a>
-                            </td>
-                        </tr>
-                    <% } %>
+                                <% if (products[i].brand) { %>
+                                    <span class="badge bg-secondary"><%= products[i].brand %></span>
+                                <% } %>
+                            </div>
+                            
+                            <img src="/images/<%= products[i].image_url || 'no-image.jpg' %>" 
+                                 class="card-img-top" style="height: 200px; object-fit: cover;" 
+                                 alt="<%= products[i].name || 'Product Image' %>">
+                            
+                            <div class="card-body">
+                                <!-- Product name as clickable link -->
+                                <h5 class="card-title">
+                                    <a href="/product/<%= products[i].id %>"><%= products[i].name || 'Unnamed Product' %></a>
+                                </h5>
+                                
+                                <!-- Product description -->
+                                <% if (products[i].description) { %>
+                                    <p class="card-text small"><%= products[i].description.substring(0, 60) %>...</p>
+                                <% } %>
+                                
+                                <!-- Product prices with proper formatting -->
+                                <% if (products[i].price !== undefined && products[i].price !== null) { %>
+                                    <p class="h5 text-primary">$<%= parseFloat(products[i].price).toFixed(2) %></p>
+                                <% } else { %>
+                                    <p class="h5 text-muted">Price not available</p>
+                                <% } %>
+                                
+                                <!-- Stock status -->
+                                <% if (products[i].stock_quantity !== undefined && products[i].stock_quantity !== null) { %>
+                                    <% if (products[i].stock_quantity > 0) { %>
+                                        <p class="text-success small">✓ <%= products[i].stock_quantity %> in stock</p>
+                                    <% } else { %>
+                                        <p class="text-danger small">✗ Out of stock</p>
+                                    <% } %>
+                                <% } %>
+                                
+                                <!-- Action buttons -->
+                                <div class="d-grid gap-2">
+                                    <a href="/product/<%= products[i].id %>" class="btn btn-outline-primary">
+                                        View Details
+                                    </a>
+                                    <a href="/updateProduct/<%= products[i].id %>" class="btn btn-secondary btn-sm">
+                                        Edit
+                                    </a>
+                                    <a href="/deleteProduct/<%= products[i].id %>" 
+                                       onclick="return confirm('Are you sure you want to delete this product?')"
+                                       class="btn btn-danger btn-sm">
+                                        Delete
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 <% } %>
-            </tbody>
-        </table>
+            <% } %>
+        </div>
     </div>
 </body>
 </html>

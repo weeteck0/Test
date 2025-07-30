@@ -156,11 +156,17 @@ app.get('/products', checkAuth, (req, res) => {
     sql += ' ORDER BY name';
     
     connection.query(sql, params, (error, results) => {
-        if (error) throw error;
+        if (error) {
+            console.error('Database query error:', error.message);
+            return res.status(500).send('Error retrieving products');
+        }
         
         // Get categories for dropdown
         connection.query('SELECT DISTINCT category FROM products', (err, categories) => {
-            if (err) throw err;
+            if (err) {
+                console.error('Database query error:', err.message);
+                return res.status(500).send('Error retrieving categories');
+            }
             
             res.render('products', { 
                 user: req.session.user, 
@@ -172,20 +178,27 @@ app.get('/products', checkAuth, (req, res) => {
     });
 });
 
-// List/View product details
+// View single product details - keeping your functionality but supermarket app structure
 app.get('/product/:id', checkAuth, (req, res) => {
     const productId = req.params.id;
+    const sql = 'SELECT * FROM products WHERE id = ?';
 
-    connection.query('SELECT * FROM products WHERE id = ?', [productId], (error, results) => {
-        if (error) throw error;
+    connection.query(sql, [productId], (error, results) => {
+        if (error) {
+            console.error('Database query error:', error.message);
+            return res.status(500).send('Error retrieving product');
+        }
 
         if (results.length > 0) {
             const product = results[0];
             
-            // Get related products from same category
-            connection.query('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 3', 
-                [product.category, productId], (err, relatedProducts) => {
-                if (err) throw err;
+            // Get related products from same category - keeping your functionality
+            const relatedSql = 'SELECT * FROM products WHERE category = ? AND id != ? LIMIT 3';
+            connection.query(relatedSql, [product.category, productId], (err, relatedProducts) => {
+                if (err) {
+                    console.error('Database query error:', err.message);
+                    return res.status(500).send('Error retrieving related products');
+                }
                 
                 res.render('product-detail', { 
                     product: product, 

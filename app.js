@@ -9,11 +9,22 @@ const session = require('express-session');
 const flash = require('connect-flash');
 const multer = require('multer');
 
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'public/images');
+    },
+    filename: (req, file, cb) => {
+        cb(null, file.originalname); 
+    }
+});
+
+const upload = multer({ storage: storage });
+
 // Set up view engine
 app.set('view engine', 'ejs');
 //  enable flash messages
 app.use(flash());
-//  enable static files
+//  enable static files 
 app.use(express.static('public'));
 // enable form processing
 app.use(express.urlencoded({
@@ -22,22 +33,8 @@ app.use(express.urlencoded({
 
 const validAdminCodes = ['ABCD1234'];
 
-// Setup MySQL connection
-const connection = mysql.createConnection({
-    host: 'c237-boss.mysql.database.azure.com',
-    user: 'c237boss',
-    password: 'c237boss!',
-    database: 'c237_005_teamfive'
-  });
-
-connection.connect((err) => {
-    if (err) {
-        console.error('Error connecting to MySQL:', err);
-        return;
-    }
-    console.log('Connected to MySQL database');
-});
-
+// Import database connection
+const connection = require('./db');
 
 //////////////////////////////////////////////////
 //  Register LogIn Modules (by Roshuko)
@@ -55,7 +52,7 @@ const validateRegistration = (req, res, next) => {
 
     if (!username || !email || !password || !address || !contact) {
         return res.status(400).send('All fields are required.');
-    }   
+    }
 
     if (password.length < 6) {
         req.flash('error', 'Password should be at least 6 or more characters long.');
@@ -83,15 +80,24 @@ const checkAdmin = (req, res, next) => {
     }
     else {
         req.flash('Error', 'Access Denied');
-        return res.redirect('/index'); // User is not admin, redirect to home
+        return res.redirect('/'); // User is not admin, redirect to home
     }
 };
 
-
-
 //////////////////////////////////////////////////
-//  Routes
+// Get Routes
 //////////////////////////////////////////////////
+
+// Use route modules
+app.get('/builds', (req, res) => {
+    res.render('builds', { user: req.session.user, messages: req.flash('success') });
+});
+app.get('/recommend', (req, res) => {
+    res.render('recommend', { user: req.session.user, messages: req.flash('success') });
+});
+app.use('/promote', (req, res) => {
+    res.render('promote', { user: req.session.user, messages: req.flash('success') });
+});
 
 // Route to Index
 app.get('/', (req, res) => {
@@ -108,12 +114,155 @@ app.get('/login', (req, res) => {
     res.render('login', { messages: req.flash('error') });
 });
 
+// Route to Recover
+app.get('/recover', (req, res) => {
+    res.render('recover', { messages: req.flash('error') });
+});
+
 // Route to Dashboard (protected)
 app.get('/dashboard', checkAuth, (req, res) => {
     res.render('dashboard', {
         user: req.session.user,
+        messages: req.flash('success')
     });
 });
+////////// addproduct ////////////
+app.get('/addProduct', checkAuth, checkAdmin, (req, res) => {
+    res.render('addProduct', {user: req.session.user } ); 
+});
+
+
+
+// ***  VIEW/LIST ***
+
+// Products listing with search and category filter
+app.get('/products', checkAuth, (req, res) => {
+    const { search, category } = req.query;
+    let sql = 'SELECT * FROM products WHERE 1=1';
+    let params = [];
+    
+    // Add search functionality 
+    if (search) {
+        sql += ' AND (name LIKE ? OR description LIKE ?)';
+        params.push(`%${search}%`, `%${search}%`);
+    }
+    
+    // Add category filter
+    if (category) {
+        sql += ' AND category = ?';
+        params.push(category);
+    }
+    
+    sql += ' ORDER BY name';
+    
+    connection.query(sql, params, (error, results) => {
+        if (error) throw error;
+        
+        // Get categories for dropdown
+        connection.query('SELECT DISTINCT category FROM products', (err, categories) => {
+            if (err) throw err;
+            
+            res.render('products', { 
+                user: req.session.user, 
+                products: results,
+                categories: categories,
+                filters: { search, category }
+            });
+        });
+    });
+});
+
+// List/View product details
+app.get('/product/:id', checkAuth, (req, res) => {
+    const productId = req.params.id;
+
+    connection.query('SELECT * FROM products WHERE id = ?', [productId], (error, results) => {
+        if (error) throw error;
+
+        if (results.length > 0) {
+            const product = results[0];
+            
+            // Get related products from same category
+            connection.query('SELECT * FROM products WHERE category = ? AND id != ? LIMIT 3', 
+                [product.category, productId], (err, relatedProducts) => {
+                if (err) throw err;
+                
+                res.render('product-detail', { 
+                    product: product, 
+                    relatedProducts: relatedProducts,
+                    user: req.session.user  
+                });
+            });
+        } else {
+            res.status(404).send('Product not found');
+        }
+    });
+});
+
+// Logout route
+app.get('/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            console.error(err);
+        }
+        res.redirect('/');
+    });
+});
+
+app.get('/updateProduct/:id',checkAuth, checkAdmin, (req,res) => {
+    const productId = req.params.id;
+    const sql = 'SELECT * FROM products WHERE id = ?';
+    connection.query(sql , [productId], (error, results) => {
+        if (error) throw error;
+        if (results.length > 0) {
+            res.render('updateProduct', { product: results[0] });
+        } else {
+            res.status(404).send('Product not found');
+        }
+    });
+});
+
+app.get('/admin', checkAuth, checkAdmin, (req, res) => {
+    res.render('admin', {
+        user: req.session.user
+    });
+});
+// List users
+app.get('/admin/users', checkAuth, checkAdmin, (req, res) => {
+  connection.query('SELECT id, username, email, role FROM users ORDER BY id', (err, results) => {
+    if (err) throw err;
+    res.render('userList', {
+      user: req.session.user,
+      users: results,
+      messages: req.flash('success')
+    });
+  });
+});
+
+//Editing user profile
+app.get('/editUsers/:id', checkAuth, (req, res) => {
+    const userId = req.params.id;
+
+    const sql = 'SELECT * FROM users WHERE id = ?';
+    connection.query(sql, [userId], (error, results) => {
+        if (error) {
+            console.error('Error retrieving user:', error);
+            return res.status(500).send('Error retrieving user.');
+        }
+
+        if (results.length > 0) {
+            res.render('editUsers', {
+                user: req.session.user,
+                targetUser: results[0],
+                messages: req.flash('error')
+            });
+        } else {
+            res.status(404).send('User not found.');
+        }
+    });
+});
+
+
 
 //////////////////////////////////////////////////
 //  POST Routes
@@ -122,23 +271,136 @@ app.get('/dashboard', checkAuth, (req, res) => {
 app.post('/register', validateRegistration, (req, res) => {
     const { username, email, password, address, contact, role, authCode } = req.body;
 
-    // If role is admin, validate the auth code
+    // If role is admin, validate the auth code from the database
     if (role === 'admin') {
-        if (!validAdminCodes.includes(authCode)) {
-            req.flash('error', 'Invalid admin authorization code.');
-            return res.redirect('/register');
-        }
+        connection.query('SELECT code FROM admin_codes WHERE code = ?', [authCode], (err, results) => {
+            if (err) {
+                console.error('Error checking admin code:', err);
+                req.flash('error', 'Registration failed. Please try again.');
+                return res.redirect('/register');
+            }
+            if (results.length === 0) {
+                req.flash('error', 'Invalid admin authorization code.');
+                return res.redirect('/register');
+            }
+            // Proceed to register admin
+            registerUser();
+        });
+    } else {
+        registerUser();
     }
 
     const sql = 'INSERT INTO users (username, email, password, address, contact, role) VALUES (?, ?, SHA1(?), ?, ?, ?)';
-    db.query(sql, [username, email, password, address, contact, role], (err, result) => {
+    connection.query(sql, [username, email, password, address, contact, role], (err, result) => {
         if (err) {
-            throw err;
+            console.error('Error registering user:', err);
+            req.flash('error', 'Registration failed. Please try again.');
+            return res.redirect('/register');
         }
         console.log(result);
         req.flash('success', 'Registration successful! Please log in.');
         res.redirect('/login');
     });
+});
+
+// LOGIN POST ROUTE
+app.post('/login', (req, res) => {
+    const { email, password } = req.body;
+    
+    const sql = 'SELECT * FROM users WHERE email = ? AND password = SHA1(?)';
+    connection.query(sql, [email, password], (err, results) => {
+        if (err) {
+            console.error(err);
+            req.flash('error', 'Database error occurred.');
+            return res.redirect('/login');
+        }
+        
+        if (results.length > 0) {
+            req.session.user = {
+                id: results[0].id,
+                username: results[0].username,
+                email: results[0].email,
+                role: results[0].role
+            };
+            req.flash('success', 'Welcome back, ' + results[0].username + '!');
+            res.redirect('/');
+        } else {
+            req.flash('error', 'Invalid email or password.');
+            res.redirect('/login');
+        }
+    });
+});
+//////////addproduct///////////
+app.post('/addProduct', upload.single('image_url'),  (req, res) => {
+    const { name, category, brand, price, stock_quantity, description, compatibility } = req.body;
+    let image;
+    if (req.file) {
+        image = req.file.filename;
+    } else {
+        image = null;
+    }
+
+    const sql = 'INSERT INTO products (name, category, brand, price, stock_quantity, description, compatibility, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+    connection.query(sql , [name, category, brand, price, stock_quantity, description, compatibility, currentImage], (error, results) => {
+        if (error) {
+            console.error("Error adding product:", error);
+            res.status(500).send('Error adding product');
+        } else {
+            res.redirect('/products');
+        }
+    });
+});
+
+app.post('/updateProduct/:id', upload.single('image'), (req, res) => {
+    const productId = req.params.id;
+    const { name, category, brand, price, stock_quantity, description, compatibility, currentImage } = req.body;
+    const image = req.file ? req.file.filename : currentImage;
+
+    const sql = 'UPDATE products SET name = ? , category = ?, brand = ?, price = ?, stock_quantity = ?, description = ?, compatibility = ?, image_url = ? WHERE id = ?';
+    connection.query(sql, [name, category, brand, price, stock_quantity, description, compatibility, image, productId], (error, results) => {
+        if (error) {
+            console.error("Error updating product:", error);
+            res.status(500).send('Error updating product');
+        } else {
+            res.redirect('/products');
+        }
+    });
+});
+//////////deleteproduct///////////
+app.get('/deleteProduct/:id', checkAuth, (req, res) => {
+  const productId = req.params.id;
+  const sql = 'DELETE FROM products WHERE id = ?';
+
+  connection.query(sql, [productId], (error, results) => {
+    if (error) {
+      console.error("Error deleting product:", error);
+      res.status(500).send('Error deleting product');
+    } else {
+      req.flash('success', 'Product deleted successfully.');
+      res.redirect('/products');
+    }
+  });
+});
+
+app.post('/builds', checkAuth, (req, res) => {
+    req.flash('success', 'Build saved successfully!');
+    res.redirect('/builds');
+});
+
+// Process edit user form
+app.post('/admin/editUser/:id', checkAuth, checkAdmin, (req, res) => {
+  const userId = req.params.id;
+  const { username, email, address, contact } = req.body;
+
+  const sql = 'UPDATE users SET username = ?, email = ?, address = ?, contact = ? WHERE id = ?';
+  connection.query(sql, [username, email, address, contact, userId], (err) => {
+    if (err) {
+      req.flash('error', 'Failed to update user');
+      return res.redirect('/admin/editUser/' + userId);
+    }
+    req.flash('success', 'User updated successfully');
+    res.redirect('/admin/users');
+  });
 });
 
 //////////////////////////////////////////////////
